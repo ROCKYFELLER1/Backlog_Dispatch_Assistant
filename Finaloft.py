@@ -1,9 +1,14 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+import requests
+from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import Request
+from io import BytesIO
 
 
 # PAGE CONFIG
+
 
 st.set_page_config(
     page_title="OFT AI Backlog Assistant",
@@ -12,13 +17,23 @@ st.set_page_config(
 )
 
 
-# AUTO LOAD FROM GOOGLE DRIVE
+# -------------------------------------------------
+# GOOGLE AUTHENTICATION (PRIVATE FILE ACCESS)
+# -------------------------------------------------
+
+scope = ["https://www.googleapis.com/auth/drive.readonly"]
+
+credentials = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
+    scopes=scope,
+)
+
+file_id = "YOUR_FILE_ID_HERE"  # <-- replace with your file ID
 
 
-file_path = "https://docs.google.com/spreadsheets/d/11u-AeuFdRbRgl-l6Wk2JaCraSreBc9Cz5oP-KRG31G8/export?format=xlsx"
-
-
+# -------------------------------------------------
 # CUSTOM STYLING
+# -------------------------------------------------
 
 st.markdown(
     """
@@ -51,6 +66,7 @@ st.markdown(
 
 
 # SESSION STATE
+# -------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -59,7 +75,9 @@ if "selected_customer" not in st.session_state:
     st.session_state.selected_customer = None
 
 
+# -------------------------------------------------
 # RESET CHAT BUTTON
+# -------------------------------------------------
 
 col1, col2 = st.columns([8, 1])
 with col2:
@@ -68,14 +86,34 @@ with col2:
         st.rerun()
 
 
-# DATA LOADING
+# -------------------------------------------------
+# SECURE DATA LOADING
+# -------------------------------------------------
 
 
 @st.cache_data(show_spinner=True)
-def load_data(file):
+def load_data():
+
+    # Refresh token
+    authed_credentials = credentials.with_scopes(scope)
+    authed_credentials.refresh(Request())
+
+    access_token = authed_credentials.token
+
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        st.error("Failed to fetch file from Google Drive.")
+        st.stop()
+
+    file_bytes = BytesIO(response.content)
 
     df_raw = pd.read_excel(
-        file,
+        file_bytes,
         engine="openpyxl",
         dtype={
             "SOLDTO": "string",
@@ -137,14 +175,16 @@ def load_data(file):
     return df, customers
 
 
-df, customers_list = load_data(file_path)
+df, customers_list = load_data()
 
 if df is None:
     st.error(f"Missing required columns: {customers_list}")
     st.stop()
 
 
-# CUSTOMER SEARCH + CLEAR BUTTON
+# -------------------------------------------------
+# CUSTOMER SEARCH
+# -------------------------------------------------
 
 col_search, col_clear = st.columns([4, 1])
 
@@ -165,14 +205,18 @@ with col_clear:
 question_type = st.selectbox("What do you want to know?", ["Backlog", "MTD"])
 
 
+# -------------------------------------------------
 # DISPLAY CHAT HISTORY
+# -------------------------------------------------
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 
-# ASK BUTTON
+# -------------------------------------------------
+# FETCH BUTTON
+# -------------------------------------------------
 
 if st.button("Fetch Result"):
 
@@ -204,38 +248,26 @@ if st.button("Fetch Result"):
     total_backlog = breakdown["Backlog"].sum()
     total_mtd = breakdown["MTD"].sum()
 
-    parts = []
+    response = f"""
+## {selected_customer} Summary
 
-    if question_type in ["Backlog", "Backlog & MTD"]:
-        backlog_text = f"## {selected_customer} - Backlog Summary\n"
-        backlog_text += f"**Total Backlog:** {total_backlog:,.2f}\n\n"
-        backlog_text += "### Backlog by City, Type and Incoterm\n"
-        parts.append(backlog_text)
-
-    if question_type in ["MTD", "Backlog & MTD"]:
-        mtd_text = f"## {selected_customer} - MTD Summary\n"
-        mtd_text += f"**Total MTD:** {total_mtd:,.2f}\n\n"
-        mtd_text += "### MTD by City, Type and Incoterm\n"
-        parts.append(mtd_text)
-
-    response = "\n\n".join(parts)
+**Total Backlog:** {total_backlog:,.2f}  
+**Total MTD:** {total_mtd:,.2f}
+"""
 
     st.session_state.messages.append({"role": "assistant", "content": response})
 
     with st.chat_message("assistant"):
-        # Text summary
         st.markdown(response)
 
-        # Tables
-        if question_type in ["Backlog"]:
-
-            backlog_table = breakdown[
-                ["City", "Type", "Incoterm", "Backlog"]
-            ].sort_values(by=["City", "Type", "Incoterm"])
-            st.dataframe(backlog_table, hide_index=True)
-
-        if question_type in ["MTD"]:
-            mtd_table = breakdown[["City", "Type", "Incoterm", "MTD"]].sort_values(
-                by=["City", "Type", "Incoterm"]
+        if question_type == "Backlog":
+            st.dataframe(
+                breakdown[["City", "Type", "Incoterm", "Backlog"]],
+                hide_index=True,
             )
-            st.dataframe(mtd_table, hide_index=True)
+
+        if question_type == "MTD":
+            st.dataframe(
+                breakdown[["City", "Type", "Incoterm", "MTD"]],
+                hide_index=True,
+            )
