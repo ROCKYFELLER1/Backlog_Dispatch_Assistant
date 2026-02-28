@@ -17,9 +17,8 @@ st.set_page_config(
 )
 
 
-# -------------------------------------------------
-# GOOGLE AUTHENTICATION (PRIVATE FILE ACCESS)
-# -------------------------------------------------
+# GOOGLE AUTHENTICATION
+
 
 scope = ["https://www.googleapis.com/auth/drive.readonly"]
 
@@ -28,12 +27,11 @@ credentials = Credentials.from_service_account_info(
     scopes=scope,
 )
 
-file_id = "11u-AeuFdRbRgl-l6Wk2JaCraSreBc9Cz5oP-KRG31G8"  
+# Your uploaded Excel file ID
+file_id = "11u-AeuFdRbRgl-l6Wk2JaCraSreBc9Cz5oP-KRG31G8"
 
-
-# -------------------------------------------------
 # CUSTOM STYLING
-# -------------------------------------------------
+
 
 st.markdown(
     """
@@ -66,7 +64,7 @@ st.markdown(
 
 
 # SESSION STATE
-# -------------------------------------------------
+
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -75,9 +73,8 @@ if "selected_customer" not in st.session_state:
     st.session_state.selected_customer = None
 
 
-# -------------------------------------------------
 # RESET CHAT BUTTON
-# -------------------------------------------------
+
 
 col1, col2 = st.columns([8, 1])
 with col2:
@@ -86,9 +83,8 @@ with col2:
         st.rerun()
 
 
-# -------------------------------------------------
 # SECURE DATA LOADING
-# -------------------------------------------------
+
 
 
 @st.cache_data(show_spinner=True)
@@ -97,17 +93,18 @@ def load_data():
     # Refresh token
     authed_credentials = credentials.with_scopes(scope)
     authed_credentials.refresh(Request())
-
     access_token = authed_credentials.token
 
-    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+    # Correct Google Drive API endpoint for uploaded Excel file
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        st.error("Failed to fetch file from Google Drive.")
+        st.error(f"Drive API Error Code: {response.status_code}")
+        st.write(response.text)
         st.stop()
 
     file_bytes = BytesIO(response.content)
@@ -182,9 +179,8 @@ if df is None:
     st.stop()
 
 
-# -------------------------------------------------
 # CUSTOMER SEARCH
-# -------------------------------------------------
+
 
 col_search, col_clear = st.columns([4, 1])
 
@@ -205,18 +201,16 @@ with col_clear:
 question_type = st.selectbox("What do you want to know?", ["Backlog", "MTD"])
 
 
-# -------------------------------------------------
 # DISPLAY CHAT HISTORY
-# -------------------------------------------------
+
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 
-# -------------------------------------------------
 # FETCH BUTTON
-# -------------------------------------------------
+
 
 if st.button("Fetch Result"):
 
@@ -248,12 +242,18 @@ if st.button("Fetch Result"):
     total_backlog = breakdown["Backlog"].sum()
     total_mtd = breakdown["MTD"].sum()
 
-    response = f"""
-## {selected_customer} Summary
+    if question_type == "Backlog":
+        response = f"""
+    ## {selected_customer} Backlog Summary
 
-**Total Backlog:** {total_backlog:,.2f}  
-**Total MTD:** {total_mtd:,.2f}
-"""
+    **Total Backlog:** {total_backlog:,.2f}
+    """
+    elif question_type == "MTD":
+        response = f"""
+    ## {selected_customer} MTD Summary
+
+    **Total MTD:** {total_mtd:,.2f}
+    """
 
     st.session_state.messages.append({"role": "assistant", "content": response})
 
