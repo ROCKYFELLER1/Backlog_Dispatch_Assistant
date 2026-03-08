@@ -1,5 +1,7 @@
 streamlit
 pandas
-openpyxl
-google-auth
+numpy
 requests
+certifi
+google-auth
+openpyxl
