@@ -208,8 +208,9 @@ except Exception as e:
     st.error(f"Unable to load data: {e}")
     st.stop()
 
-today = datetime.now().date()
-month_start = today.replace(day=1)
+today_ts = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
+today = today_ts.date()
+month_start_ts = today_ts.replace(day=1)
 
 # -------------------------------------------------
 # DATE FILTER
