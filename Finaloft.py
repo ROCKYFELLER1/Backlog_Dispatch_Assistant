@@ -5,11 +5,14 @@ from datetime import datetime
 import openpyxl
 import requests
 import certifi
+import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from io import BytesIO
+from http.client import RemoteDisconnected
+from requests.exceptions import ConnectionError, ChunkedEncodingError, SSLError
 
 # -------------------------------------------------
 # PAGE CONFIG
@@ -130,72 +133,126 @@ def load_data():
     url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    session = requests.Session()
     retries = Retry(
         total=5,
         connect=5,
         read=5,
-        backoff_factor=1,
+        backoff_factor=2,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retries))
-
-    response = session.get(
-        url,
-        headers=headers,
-        timeout=60,
-        verify=certifi.where(),
+        raise_on_status=False,
     )
 
-    if response.status_code != 200:
-        st.error(f"Drive API Error: {response.status_code} - {response.text}")
-        st.stop()
+    last_error = None
 
-    file_bytes = BytesIO(response.content)
-    df = pd.read_excel(file_bytes, engine="openpyxl")
+    for attempt in range(3):
+        session = requests.Session()
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        session.headers.update(headers)
 
-    df = df.dropna(how="all")
-    df.columns = df.columns.str.strip()
+        try:
+            response = session.get(
+                url,
+                timeout=(30, 120),
+                verify=certifi.where(),
+                stream=False,
+            )
 
-    required_cols = [
-        "SOLDTO",
-        "LOADING_TS",
-        "Backlog",
-        "TARGET",
-        "ORDERED_QUANTITY",
-        "Order_in_New",
-        "Order_in_Pool",
-        "Incoterm",
-        "City",
-        "Type",
-        "Region",
-    ]
+            if response.status_code != 200:
+                st.error(f"Drive API Error: {response.status_code} - {response.text}")
+                st.stop()
 
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        st.error(f"Missing required columns: {', '.join(missing_cols)}")
-        st.stop()
+            file_bytes = BytesIO(response.content)
+            df = pd.read_excel(file_bytes, engine="openpyxl")
 
-    df["SOLDTO"] = df["SOLDTO"].astype(str).str.strip()
-    df = df[(df["SOLDTO"] != "") & (df["SOLDTO"].str.lower() != "nan")]
+            df = df.dropna(how="all")
+            df.columns = df.columns.str.strip()
 
-    numeric_cols = [
-        "Backlog",
-        "TARGET",
-        "ORDERED_QUANTITY",
-        "Order_in_New",
-        "Order_in_Pool",
-    ]
+            required_cols = [
+                "SOLDTO",
+                "LOADING_TS",
+                "Backlog",
+                "TARGET",
+                "ORDERED_QUANTITY",
+                "Order_in_New",
+                "Order_in_Pool",
+                "Incoterm",
+                "City",
+                "Type",
+                "Region",
+            ]
 
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                st.error(f"Missing required columns: {', '.join(missing_cols)}")
+                st.stop()
 
-    df["LOADING_TS"] = pd.to_datetime(df["LOADING_TS"], errors="coerce")
-    df = df[df["LOADING_TS"].notna()].copy()
-    df["LOADING_DATE"] = df["LOADING_TS"].dt.date
+            df["SOLDTO"] = df["SOLDTO"].astype(str).str.strip()
+            df = df[(df["SOLDTO"] != "") & (df["SOLDTO"].str.lower() != "nan")]
 
-    return df
+            numeric_cols = [
+                "Backlog",
+                "TARGET",
+                "ORDERED_QUANTITY",
+                "Order_in_New",
+                "Order_in_Pool",
+            ]
+
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+            df["LOADING_TS"] = pd.to_datetime(df["LOADING_TS"], errors="coerce")
+            df = df[df["LOADING_TS"].notna()].copy()
+            df["LOADING_TS"] = df["LOADING_TS"].dt.normalize()
+            df["LOADING_DATE"] = df["LOADING_TS"].dt.date
+
+            return df
+
+        except (
+            RemoteDisconnected,
+            ConnectionError,
+            ChunkedEncodingError,
+            SSLError,
+        ) as e:
+            last_error = e
+            time.sleep(2 * (attempt + 1))
+
+        except Exception as e:
+            last_error = e
+            time.sleep(2 * (attempt + 1))
+
+        finally:
+            session.close()
+
+    raise Exception(f"Google Drive connection failed after retries: {last_error}")
+
+
+def get_snapshot_value(series):
+    valid = series.dropna()
+    if valid.empty:
+        return 0
+    return valid.max()
+
+
+def allocate_snapshot_to_buckets(total_value, base_bucket_totals):
+    bucket_sum = sum(base_bucket_totals.values())
+
+    if bucket_sum == 0:
+        return {b: 0 for b in base_bucket_totals.keys()}
+
+    allocated = {}
+    running_total = 0
+    bucket_keys = list(base_bucket_totals.keys())
+
+    for i, b in enumerate(bucket_keys):
+        if i < len(bucket_keys) - 1:
+            share = base_bucket_totals[b] / bucket_sum
+            allocated[b] = round(total_value * share, 0)
+            running_total += allocated[b]
+        else:
+            allocated[b] = round(total_value - running_total, 0)
+
+    return allocated
 
 
 # -------------------------------------------------
@@ -280,27 +337,23 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         st.warning("No data available for the selected customer and date range.")
         st.stop()
 
-    # -------------------------------------------------
-    # OVERALL KPI VALUES
-    # -------------------------------------------------
+    report_today_ts = filtered_df["LOADING_TS"].max()
+    report_today = report_today_ts.date()
+    report_month_start_ts = report_today_ts.replace(day=1)
 
-    total_backlog_value = customer_df["Backlog"].max()
-    total_target_value = customer_df["TARGET"].max()
-    total_order_new_value = customer_df["Order_in_New"].max()
-    total_order_pool_value = customer_df["Order_in_Pool"].max()
+    total_backlog_value = get_snapshot_value(customer_df["Backlog"])
+    total_target_value = get_snapshot_value(customer_df["TARGET"])
+    total_order_new_value = get_snapshot_value(customer_df["Order_in_New"])
+    total_order_pool_value = get_snapshot_value(customer_df["Order_in_Pool"])
 
-    today_dispatch_value = customer_df[customer_df["LOADING_DATE"] == today][
+    today_dispatch_value = filtered_df[filtered_df["LOADING_DATE"] == report_today][
         "ORDERED_QUANTITY"
     ].sum()
 
-    mtd_dispatch_value = customer_df[
-        (customer_df["LOADING_DATE"] >= month_start_ts)
-        & (customer_df["LOADING_DATE"] <= today)
+    mtd_dispatch_value = filtered_df[
+        (filtered_df["LOADING_TS"] >= report_month_start_ts)
+        & (filtered_df["LOADING_TS"] <= report_today_ts)
     ]["ORDERED_QUANTITY"].sum()
-
-    # -------------------------------------------------
-    # SUMMARY FOR ALERTS
-    # -------------------------------------------------
 
     summary = (
         filtered_df.groupby(
@@ -314,8 +367,8 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             Dispatch=(
                 "ORDERED_QUANTITY",
                 lambda x: x[
-                    (filtered_df.loc[x.index, "LOADING_DATE"] >= month_start)
-                    & (filtered_df.loc[x.index, "LOADING_DATE"] <= today)
+                    (filtered_df.loc[x.index, "LOADING_TS"] >= report_month_start_ts)
+                    & (filtered_df.loc[x.index, "LOADING_TS"] <= report_today_ts)
                 ].sum(),
             ),
         )
@@ -324,49 +377,31 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     summary["Coverage"] = summary["Backlog"] / summary["Target"].replace(0, np.nan)
 
-    # -------------------------------------------------
-    # CARD BREAKDOWN
-    # -------------------------------------------------
-
     card_base = filtered_df.groupby(
         ["City", "Type", "Incoterm"], dropna=False, as_index=False
     ).agg(
-        Ordered_Qty=("ORDERED_QUANTITY", "sum"),
+        Backlog=("ORDERED_QUANTITY", "sum"),
         Dispatch=(
             "ORDERED_QUANTITY",
             lambda x: x[
-                (filtered_df.loc[x.index, "LOADING_DATE"] >= month_start)
-                & (filtered_df.loc[x.index, "LOADING_DATE"] <= today)
+                (filtered_df.loc[x.index, "LOADING_TS"] >= report_month_start_ts)
+                & (filtered_df.loc[x.index, "LOADING_TS"] <= report_today_ts)
             ].sum(),
         ),
     )
 
-    total_ordered_qty = card_base["Ordered_Qty"].sum()
+    total_actual_backlog_qty = card_base["Backlog"].sum()
 
-    if total_ordered_qty > 0:
-        card_base["Share"] = card_base["Ordered_Qty"] / total_ordered_qty
+    if total_actual_backlog_qty > 0:
+        card_base["Share"] = card_base["Backlog"] / total_actual_backlog_qty
     else:
         card_base["Share"] = 0
 
-    card_base["Backlog"] = card_base["Share"] * total_backlog_value
+    card_base["Target"] = card_base["Share"] * total_target_value
     card_base["Order_New"] = card_base["Share"] * total_order_new_value
     card_base["Order_Pool"] = card_base["Share"] * total_order_pool_value
-    card_base["Target"] = card_base["Share"] * total_target_value
-
-    # -------------------------------------------------
-    # QUANTITY BUCKETS INSIDE EACH CARD
-    # -------------------------------------------------
 
     qty_buckets = [45, 40, 30, 20, 15, 10]
-
-    bucket_source = filtered_df.groupby(
-        ["City", "Type", "Incoterm", "ORDERED_QUANTITY"],
-        dropna=False,
-        as_index=False,
-    ).agg(Bucket_Qty_Total=("ORDERED_QUANTITY", "sum"))
-
-    bucket_source = bucket_source[bucket_source["ORDERED_QUANTITY"].isin(qty_buckets)]
-
     card_bucket_map = {}
 
     for _, card_row in card_base.iterrows():
@@ -374,41 +409,51 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         typ = card_row["Type"]
         incoterm = card_row["Incoterm"]
 
-        temp = bucket_source[
-            (bucket_source["City"] == city)
-            & (bucket_source["Type"] == typ)
-            & (bucket_source["Incoterm"] == incoterm)
+        card_scope = filtered_df[
+            (filtered_df["City"] == city)
+            & (filtered_df["Type"] == typ)
+            & (filtered_df["Incoterm"] == incoterm)
         ].copy()
 
-        bucket_totals = {b: 0 for b in qty_buckets}
+        dispatch_scope = card_scope[
+            (card_scope["LOADING_TS"] >= report_month_start_ts)
+            & (card_scope["LOADING_TS"] <= report_today_ts)
+        ].copy()
 
-        for _, r in temp.iterrows():
-            bucket_totals[int(r["ORDERED_QUANTITY"])] = r["Bucket_Qty_Total"]
+        actual_backlog_buckets = {b: 0 for b in qty_buckets}
+        actual_dispatch_buckets = {b: 0 for b in qty_buckets}
 
-        bucket_sum = sum(bucket_totals.values())
+        backlog_bucket_df = (
+            card_scope[card_scope["ORDERED_QUANTITY"].isin(qty_buckets)]
+            .groupby("ORDERED_QUANTITY", dropna=False, as_index=False)
+            .agg(Bucket_Qty_Total=("ORDERED_QUANTITY", "sum"))
+        )
 
-        backlog_bucket = {b: 0 for b in qty_buckets}
-        dispatch_bucket = {b: 0 for b in qty_buckets}
-        order_new_bucket = {b: 0 for b in qty_buckets}
-        order_pool_bucket = {b: 0 for b in qty_buckets}
+        dispatch_bucket_df = (
+            dispatch_scope[dispatch_scope["ORDERED_QUANTITY"].isin(qty_buckets)]
+            .groupby("ORDERED_QUANTITY", dropna=False, as_index=False)
+            .agg(Bucket_Qty_Total=("ORDERED_QUANTITY", "sum"))
+        )
 
-        for b in qty_buckets:
-            share = bucket_totals[b] / bucket_sum if bucket_sum > 0 else 0
-            backlog_bucket[b] = round(card_row["Backlog"] * share, 0)
-            dispatch_bucket[b] = round(card_row["Dispatch"] * share, 0)
-            order_new_bucket[b] = round(card_row["Order_New"] * share, 0)
-            order_pool_bucket[b] = round(card_row["Order_Pool"] * share, 0)
+        for _, r in backlog_bucket_df.iterrows():
+            actual_backlog_buckets[int(r["ORDERED_QUANTITY"])] = r["Bucket_Qty_Total"]
+
+        for _, r in dispatch_bucket_df.iterrows():
+            actual_dispatch_buckets[int(r["ORDERED_QUANTITY"])] = r["Bucket_Qty_Total"]
+
+        order_new_buckets = allocate_snapshot_to_buckets(
+            card_row["Order_New"], actual_backlog_buckets
+        )
+        order_pool_buckets = allocate_snapshot_to_buckets(
+            card_row["Order_Pool"], actual_backlog_buckets
+        )
 
         card_bucket_map[(city, typ, incoterm)] = {
-            "Backlog": backlog_bucket,
-            "Dispatch": dispatch_bucket,
-            "Order_New": order_new_bucket,
-            "Order_Pool": order_pool_bucket,
+            "Backlog": actual_backlog_buckets,
+            "Dispatch": actual_dispatch_buckets,
+            "Order_New": order_new_buckets,
+            "Order_Pool": order_pool_buckets,
         }
-
-    # -------------------------------------------------
-    # ALERTS
-    # -------------------------------------------------
 
     alerts = []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -424,7 +469,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
                 "City": "All Cities",
                 "Severity": "BLUE",
                 "Message": "Backlog available but no target defined",
-                "Reason": "Customer has backlog orders but no target assigned",
+                "Reason": "Customer has backlog orders but no target",
             }
         )
 
@@ -489,10 +534,6 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     alerts_df = pd.DataFrame(alerts)
 
-    # -------------------------------------------------
-    # FILTERS
-    # -------------------------------------------------
-
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
@@ -527,10 +568,6 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             filtered_cards["Type"].astype(str) == selected_type
         ]
 
-    # -------------------------------------------------
-    # LAYOUT
-    # -------------------------------------------------
-
     left, right = st.columns([3, 1])
 
     with left:
@@ -557,7 +594,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         cols = st.columns(2)
 
         metric_label_map = {
-            "Backlog": "Allocated Backlog",
+            "Backlog": "Backlog Quantity",
             "Dispatch": "MTD Dispatch",
             "Order_New": "Allocated Order in New",
             "Order_Pool": "Allocated Order in Pool",
@@ -576,7 +613,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
                 if metric == "Backlog":
                     card_class = (
                         "card card-critical"
-                        if (row["Backlog"] == 0 or row["Backlog"] < row["Target"])
+                        if (overall_backlog == 0 or overall_backlog < overall_target)
                         else "card card-normal"
                     )
                 else:
