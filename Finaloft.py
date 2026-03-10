@@ -294,7 +294,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     ].sum()
 
     mtd_dispatch_value = customer_df[
-        (customer_df["LOADING_DATE"] >= month_start)
+        (customer_df["LOADING_DATE"] >= month_start_ts)
         & (customer_df["LOADING_DATE"] <= today)
     ]["ORDERED_QUANTITY"].sum()
 
