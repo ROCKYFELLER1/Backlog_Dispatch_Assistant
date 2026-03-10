@@ -180,6 +180,7 @@ def load_data():
                 "City",
                 "Type",
                 "Region",
+                "Status Summary",
             ]
 
             missing_cols = [col for col in required_cols if col not in df.columns]
@@ -189,6 +190,8 @@ def load_data():
 
             df["SOLDTO"] = df["SOLDTO"].astype(str).str.strip()
             df = df[(df["SOLDTO"] != "") & (df["SOLDTO"].str.lower() != "nan")]
+
+            df["Status Summary"] = df["Status Summary"].astype(str).str.strip()
 
             numeric_cols = [
                 "Backlog",
@@ -337,23 +340,44 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         st.warning("No data available for the selected customer and date range.")
         st.stop()
 
-    report_today_ts = filtered_df["LOADING_TS"].max()
-    report_today = report_today_ts.date()
-    report_month_start_ts = report_today_ts.replace(day=1)
-
     total_backlog_value = get_snapshot_value(customer_df["Backlog"])
     total_target_value = get_snapshot_value(customer_df["TARGET"])
     total_order_new_value = get_snapshot_value(customer_df["Order_in_New"])
     total_order_pool_value = get_snapshot_value(customer_df["Order_in_Pool"])
 
-    today_dispatch_value = filtered_df[filtered_df["LOADING_DATE"] == report_today][
-        "ORDERED_QUANTITY"
-    ].sum()
+    # -------------------------------------------------
+    # DISPATCH DATA, ONLY STATUS SUMMARY = DISPATCHED
+    # -------------------------------------------------
 
-    mtd_dispatch_value = filtered_df[
-        (filtered_df["LOADING_TS"] >= report_month_start_ts)
-        & (filtered_df["LOADING_TS"] <= report_today_ts)
-    ]["ORDERED_QUANTITY"].sum()
+    dispatched_df = filtered_df[
+        filtered_df["Status Summary"].astype(str).str.strip().str.upper()
+        == "DISPATCHED"
+    ].copy()
+
+    if dispatched_df.empty:
+        report_today_ts = filtered_df["LOADING_TS"].max()
+        report_today = report_today_ts.date()
+        report_month_start_ts = report_today_ts.replace(day=1)
+        today_dispatch_value = 0
+        mtd_dispatch_value = 0
+        today_dispatched_df = dispatched_df.copy()
+        mtd_dispatched_df = dispatched_df.copy()
+    else:
+        report_today_ts = dispatched_df["LOADING_TS"].max()
+        report_today = report_today_ts.date()
+        report_month_start_ts = report_today_ts.replace(day=1)
+
+        today_dispatched_df = dispatched_df[
+            dispatched_df["LOADING_DATE"] == report_today
+        ].copy()
+
+        mtd_dispatched_df = dispatched_df[
+            (dispatched_df["LOADING_TS"] >= report_month_start_ts)
+            & (dispatched_df["LOADING_TS"] <= report_today_ts)
+        ].copy()
+
+        today_dispatch_value = today_dispatched_df["ORDERED_QUANTITY"].sum()
+        mtd_dispatch_value = mtd_dispatched_df["ORDERED_QUANTITY"].sum()
 
     summary = (
         filtered_df.groupby(
@@ -364,31 +388,39 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             Target=("TARGET", "max"),
             Order_New=("Order_in_New", "max"),
             Order_Pool=("Order_in_Pool", "max"),
-            Dispatch=(
-                "ORDERED_QUANTITY",
-                lambda x: x[
-                    (filtered_df.loc[x.index, "LOADING_TS"] >= report_month_start_ts)
-                    & (filtered_df.loc[x.index, "LOADING_TS"] <= report_today_ts)
-                ].sum(),
-            ),
         )
         .reset_index()
     )
 
+    dispatch_summary = (
+        mtd_dispatched_df.groupby(
+            ["SOLDTO", "Incoterm", "City", "Type", "Region"], dropna=False
+        )["ORDERED_QUANTITY"]
+        .sum()
+        .reset_index(name="Dispatch")
+    )
+
+    summary = summary.merge(
+        dispatch_summary,
+        on=["SOLDTO", "Incoterm", "City", "Type", "Region"],
+        how="left",
+    )
+    summary["Dispatch"] = summary["Dispatch"].fillna(0)
     summary["Coverage"] = summary["Backlog"] / summary["Target"].replace(0, np.nan)
 
-    card_base = filtered_df.groupby(
+    backlog_card_base = filtered_df.groupby(
         ["City", "Type", "Incoterm"], dropna=False, as_index=False
-    ).agg(
-        Backlog=("ORDERED_QUANTITY", "sum"),
-        Dispatch=(
-            "ORDERED_QUANTITY",
-            lambda x: x[
-                (filtered_df.loc[x.index, "LOADING_TS"] >= report_month_start_ts)
-                & (filtered_df.loc[x.index, "LOADING_TS"] <= report_today_ts)
-            ].sum(),
-        ),
-    )
+    ).agg(Backlog=("ORDERED_QUANTITY", "sum"))
+
+    dispatch_card_base = mtd_dispatched_df.groupby(
+        ["City", "Type", "Incoterm"], dropna=False, as_index=False
+    ).agg(Dispatch=("ORDERED_QUANTITY", "sum"))
+
+    card_base = backlog_card_base.merge(
+        dispatch_card_base,
+        on=["City", "Type", "Incoterm"],
+        how="outer",
+    ).fillna(0)
 
     total_actual_backlog_qty = card_base["Backlog"].sum()
 
@@ -415,9 +447,10 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             & (filtered_df["Incoterm"] == incoterm)
         ].copy()
 
-        dispatch_scope = card_scope[
-            (card_scope["LOADING_TS"] >= report_month_start_ts)
-            & (card_scope["LOADING_TS"] <= report_today_ts)
+        dispatch_scope = mtd_dispatched_df[
+            (mtd_dispatched_df["City"] == city)
+            & (mtd_dispatched_df["Type"] == typ)
+            & (mtd_dispatched_df["Incoterm"] == incoterm)
         ].copy()
 
         actual_backlog_buckets = {b: 0 for b in qty_buckets}
@@ -567,6 +600,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         filtered_cards = filtered_cards[
             filtered_cards["Type"].astype(str) == selected_type
         ]
+
+    if metric == "Dispatch":
+        filtered_cards = filtered_cards[filtered_cards["Dispatch"] > 0]
 
     left, right = st.columns([3, 1])
 
