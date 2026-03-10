@@ -11,14 +11,15 @@ from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from io import BytesIO
 
+# -------------------------------------------------
 # PAGE CONFIG
-
+# -------------------------------------------------
 
 st.set_page_config(page_title="OFT Backlog & Dispatch Assistant", layout="wide")
 
-
+# -------------------------------------------------
 # GOOGLE AUTHENTICATION
-
+# -------------------------------------------------
 
 scope = ["https://www.googleapis.com/auth/drive.readonly"]
 
@@ -29,9 +30,9 @@ credentials = Credentials.from_service_account_info(
 
 file_id = "11u-AeuFdRbRgl-l6Wk2JaCraSreBc9Cz5oP-KRG31G8"
 
-
+# -------------------------------------------------
 # STYLE
-
+# -------------------------------------------------
 
 st.markdown(
     """
@@ -76,9 +77,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
+# -------------------------------------------------
 # GREETING
-
+# -------------------------------------------------
 
 hour = datetime.now().hour
 
@@ -94,9 +95,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
+# -------------------------------------------------
 # HEADER
-
+# -------------------------------------------------
 
 st.markdown(
     """
@@ -115,9 +116,9 @@ margin-bottom:25px;">
     unsafe_allow_html=True,
 )
 
-#
+# -------------------------------------------------
 # LOAD DATA
-
+# -------------------------------------------------
 
 
 @st.cache_data(show_spinner=True)
@@ -157,8 +158,27 @@ def load_data():
     df = df.dropna(how="all")
     df.columns = df.columns.str.strip()
 
+    required_cols = [
+        "SOLDTO",
+        "LOADING_TS",
+        "Backlog",
+        "TARGET",
+        "ORDERED_QUANTITY",
+        "Order_in_New",
+        "Order_in_Pool",
+        "Incoterm",
+        "City",
+        "Type",
+        "Region",
+    ]
+
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        st.error(f"Missing required columns: {', '.join(missing_cols)}")
+        st.stop()
+
     df["SOLDTO"] = df["SOLDTO"].astype(str).str.strip()
-    df = df[(df["SOLDTO"] != "") & (df["SOLDTO"] != "nan")]
+    df = df[(df["SOLDTO"] != "") & (df["SOLDTO"].str.lower() != "nan")]
 
     numeric_cols = [
         "Backlog",
@@ -169,19 +189,18 @@ def load_data():
     ]
 
     for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     df["LOADING_TS"] = pd.to_datetime(df["LOADING_TS"], errors="coerce")
-    df = df[df["LOADING_TS"].notna()]
+    df = df[df["LOADING_TS"].notna()].copy()
     df["LOADING_DATE"] = df["LOADING_TS"].dt.date
 
     return df
 
 
-
+# -------------------------------------------------
 # LOAD DATAFRAME
-
+# -------------------------------------------------
 
 try:
     df = load_data()
@@ -190,10 +209,11 @@ except Exception as e:
     st.stop()
 
 today = datetime.now().date()
+month_start = today.replace(day=1)
 
-
+# -------------------------------------------------
 # DATE FILTER
-
+# -------------------------------------------------
 
 st.sidebar.header("MTD Date Range")
 
@@ -207,9 +227,9 @@ if start_date > end_date:
     st.sidebar.error("End Date must be after Start Date")
     st.stop()
 
-
+# -------------------------------------------------
 # CUSTOMER FILTER
-
+# -------------------------------------------------
 
 customers = sorted(df["SOLDTO"].unique())
 
@@ -217,9 +237,9 @@ selected_customer = st.sidebar.selectbox(
     "Customer Search", ["Select Customer"] + customers
 )
 
-
+# -------------------------------------------------
 # ACTION BUTTONS
-
+# -------------------------------------------------
 
 st.sidebar.markdown("### Actions")
 
@@ -236,58 +256,66 @@ if selected_customer == "Select Customer":
     st.info("Please select a customer from the sidebar.")
     st.stop()
 
-
+# -------------------------------------------------
 # LOAD RESULTS
+# -------------------------------------------------
 
 if fetch_clicked or "summary_loaded" in st.session_state:
 
     st.session_state["summary_loaded"] = True
 
-    df = df[(df["LOADING_DATE"] >= start_date) & (df["LOADING_DATE"] <= end_date)]
-    df = df[df["SOLDTO"] == selected_customer]
+    customer_df = df[df["SOLDTO"] == selected_customer].copy()
 
-    if df.empty:
+    if customer_df.empty:
+        st.warning("No data available for the selected customer.")
+        st.stop()
+
+    filtered_df = customer_df[
+        (customer_df["LOADING_DATE"] >= start_date)
+        & (customer_df["LOADING_DATE"] <= end_date)
+    ].copy()
+
+    if filtered_df.empty:
         st.warning("No data available for the selected customer and date range.")
         st.stop()
 
-
+    # -------------------------------------------------
     # OVERALL KPI VALUES
-  
+    # -------------------------------------------------
 
-    total_backlog_value = (
-        df["Backlog"].dropna().iloc[0] if not df["Backlog"].dropna().empty else 0
-    )
-    total_target_value = (
-        df["TARGET"].dropna().iloc[0] if not df["TARGET"].dropna().empty else 0
-    )
-    total_order_new_value = (
-        df["Order_in_New"].dropna().iloc[0]
-        if not df["Order_in_New"].dropna().empty
-        else 0
-    )
-    total_order_pool_value = (
-        df["Order_in_Pool"].dropna().iloc[0]
-        if not df["Order_in_Pool"].dropna().empty
-        else 0
-    )
+    total_backlog_value = customer_df["Backlog"].max()
+    total_target_value = customer_df["TARGET"].max()
+    total_order_new_value = customer_df["Order_in_New"].max()
+    total_order_pool_value = customer_df["Order_in_Pool"].max()
 
-    today_dispatch_value = df[df["LOADING_DATE"] == today]["ORDERED_QUANTITY"].sum()
-    past_dispatch_value = df[df["LOADING_DATE"] < today]["ORDERED_QUANTITY"].sum()
+    today_dispatch_value = customer_df[customer_df["LOADING_DATE"] == today][
+        "ORDERED_QUANTITY"
+    ].sum()
+
+    mtd_dispatch_value = customer_df[
+        (customer_df["LOADING_DATE"] >= month_start)
+        & (customer_df["LOADING_DATE"] <= today)
+    ]["ORDERED_QUANTITY"].sum()
 
     # -------------------------------------------------
     # SUMMARY FOR ALERTS
     # -------------------------------------------------
 
     summary = (
-        df.groupby(["SOLDTO", "Incoterm", "City", "Type", "Region"], dropna=False)
+        filtered_df.groupby(
+            ["SOLDTO", "Incoterm", "City", "Type", "Region"], dropna=False
+        )
         .agg(
-            Backlog=("Backlog", "first"),
-            Target=("TARGET", "first"),
-            Order_New=("Order_in_New", "first"),
-            Order_Pool=("Order_in_Pool", "first"),
+            Backlog=("Backlog", "max"),
+            Target=("TARGET", "max"),
+            Order_New=("Order_in_New", "max"),
+            Order_Pool=("Order_in_Pool", "max"),
             Dispatch=(
                 "ORDERED_QUANTITY",
-                lambda x: x[df.loc[x.index, "LOADING_DATE"] < today].sum(),
+                lambda x: x[
+                    (filtered_df.loc[x.index, "LOADING_DATE"] >= month_start)
+                    & (filtered_df.loc[x.index, "LOADING_DATE"] <= today)
+                ].sum(),
             ),
         )
         .reset_index()
@@ -299,13 +327,16 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     # CARD BREAKDOWN
     # -------------------------------------------------
 
-    card_base = df.groupby(
+    card_base = filtered_df.groupby(
         ["City", "Type", "Incoterm"], dropna=False, as_index=False
     ).agg(
         Ordered_Qty=("ORDERED_QUANTITY", "sum"),
         Dispatch=(
             "ORDERED_QUANTITY",
-            lambda x: x[df.loc[x.index, "LOADING_DATE"] < today].sum(),
+            lambda x: x[
+                (filtered_df.loc[x.index, "LOADING_DATE"] >= month_start)
+                & (filtered_df.loc[x.index, "LOADING_DATE"] <= today)
+            ].sum(),
         ),
     )
 
@@ -321,13 +352,13 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     card_base["Order_Pool"] = card_base["Share"] * total_order_pool_value
     card_base["Target"] = card_base["Share"] * total_target_value
 
-
+    # -------------------------------------------------
     # QUANTITY BUCKETS INSIDE EACH CARD
-  
+    # -------------------------------------------------
 
     qty_buckets = [45, 40, 30, 20, 15, 10]
 
-    bucket_source = df.groupby(
+    bucket_source = filtered_df.groupby(
         ["City", "Type", "Incoterm", "ORDERED_QUANTITY"],
         dropna=False,
         as_index=False,
@@ -374,9 +405,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             "Order_Pool": order_pool_bucket,
         }
 
-    
+    # -------------------------------------------------
     # ALERTS
-   
+    # -------------------------------------------------
 
     alerts = []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -457,8 +488,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     alerts_df = pd.DataFrame(alerts)
 
-    
+    # -------------------------------------------------
     # FILTERS
+    # -------------------------------------------------
 
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
 
@@ -494,9 +526,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             filtered_cards["Type"].astype(str) == selected_type
         ]
 
-    
+    # -------------------------------------------------
     # LAYOUT
-  
+    # -------------------------------------------------
 
     left, right = st.columns([3, 1])
 
@@ -510,7 +542,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             st.metric("Target", f"{total_target_value:,.0f}T")
 
         with k3:
-            st.metric("MTD Dispatch", f"{past_dispatch_value:,.0f}T")
+            st.metric("MTD Dispatch", f"{mtd_dispatch_value:,.0f}T")
 
         with k4:
             st.metric("Today Dispatch", f"{today_dispatch_value:,.0f}T")
