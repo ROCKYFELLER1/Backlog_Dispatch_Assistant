@@ -13,12 +13,15 @@ from google.auth.transport.requests import Request
 from io import BytesIO
 from http.client import RemoteDisconnected
 from requests.exceptions import ConnectionError, ChunkedEncodingError, SSLError
+from streamlit_autorefresh import st_autorefresh
 
-
+# -------------------------------------------------
 # PAGE CONFIG
-
+# -------------------------------------------------
 
 st.set_page_config(page_title="OFT Backlog & Dispatch Assistant", layout="wide")
+
+st_autorefresh(interval=600000, key="data_refresh")
 
 # -------------------------------------------------
 # GOOGLE AUTHENTICATION
