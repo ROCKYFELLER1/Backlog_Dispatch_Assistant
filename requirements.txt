@@ -4,6 +4,6 @@ numpy
 openpyxl
 requests
 certifi
-urllib3
 google-auth
+streamlit-autorefresh
 
