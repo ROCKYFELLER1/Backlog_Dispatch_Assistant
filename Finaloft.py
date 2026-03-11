@@ -14,9 +14,9 @@ from io import BytesIO
 from http.client import RemoteDisconnected
 from requests.exceptions import ConnectionError, ChunkedEncodingError, SSLError
 
-# -------------------------------------------------
+
 # PAGE CONFIG
-# -------------------------------------------------
+
 
 st.set_page_config(page_title="OFT Backlog & Dispatch Assistant", layout="wide")
 
@@ -124,7 +124,7 @@ margin-bottom:25px;">
 # -------------------------------------------------
 
 
-@st.cache_data(show_spinner=True)
+@st.cache_data(show_spinner=True, ttl=300)
 def load_data():
     authed_credentials = credentials.with_scopes(scope)
     authed_credentials.refresh(Request())
@@ -204,7 +204,9 @@ def load_data():
             for col in numeric_cols:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-            df["LOADING_TS"] = pd.to_datetime(df["LOADING_TS"], errors="coerce")
+            df["LOADING_TS"] = pd.to_datetime(
+                df["LOADING_TS"], format="mixed", errors="coerce"
+            )
             df = df[df["LOADING_TS"].notna()].copy()
             df["LOADING_TS"] = df["LOADING_TS"].dt.normalize()
             df["LOADING_DATE"] = df["LOADING_TS"].dt.date
@@ -258,9 +260,8 @@ def allocate_snapshot_to_buckets(total_value, base_bucket_totals):
     return allocated
 
 
-# -------------------------------------------------
 # LOAD DATAFRAME
-# -------------------------------------------------
+
 
 try:
     df = load_data()
@@ -272,9 +273,9 @@ today_ts = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
 today = today_ts.date()
 month_start_ts = today_ts.replace(day=1)
 
-# -------------------------------------------------
+
 # DATE FILTER
-# -------------------------------------------------
+
 
 st.sidebar.header("MTD Date Range")
 
@@ -288,9 +289,9 @@ if start_date > end_date:
     st.sidebar.error("End Date must be after Start Date")
     st.stop()
 
-# -------------------------------------------------
+
 # CUSTOMER FILTER
-# -------------------------------------------------
+
 
 customers = sorted(df["SOLDTO"].unique())
 
@@ -298,9 +299,9 @@ selected_customer = st.sidebar.selectbox(
     "Customer Search", ["Select Customer"] + customers
 )
 
-# -------------------------------------------------
+
 # ACTION BUTTONS
-# -------------------------------------------------
+
 
 st.sidebar.markdown("### Actions")
 
@@ -317,9 +318,9 @@ if selected_customer == "Select Customer":
     st.info("Please select a customer from the sidebar.")
     st.stop()
 
-# -------------------------------------------------
+
 # LOAD RESULTS
-# -------------------------------------------------
+
 
 if fetch_clicked or "summary_loaded" in st.session_state:
 
@@ -345,39 +346,28 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     total_order_new_value = get_snapshot_value(customer_df["Order_in_New"])
     total_order_pool_value = get_snapshot_value(customer_df["Order_in_Pool"])
 
-    # -------------------------------------------------
     # DISPATCH DATA, ONLY STATUS SUMMARY = DISPATCHED
-    # -------------------------------------------------
 
     dispatched_df = filtered_df[
         filtered_df["Status Summary"].astype(str).str.strip().str.upper()
         == "DISPATCHED"
     ].copy()
 
-    if dispatched_df.empty:
-        report_today_ts = filtered_df["LOADING_TS"].max()
-        report_today = report_today_ts.date()
-        report_month_start_ts = report_today_ts.replace(day=1)
-        today_dispatch_value = 0
-        mtd_dispatch_value = 0
-        today_dispatched_df = dispatched_df.copy()
-        mtd_dispatched_df = dispatched_df.copy()
-    else:
-        report_today_ts = dispatched_df["LOADING_TS"].max()
-        report_today = report_today_ts.date()
-        report_month_start_ts = report_today_ts.replace(day=1)
+    report_today_ts = today_ts
+    report_today = today
+    report_month_start_ts = month_start_ts
 
-        today_dispatched_df = dispatched_df[
-            dispatched_df["LOADING_DATE"] == report_today
-        ].copy()
+    today_dispatched_df = dispatched_df[
+        dispatched_df["LOADING_DATE"] == report_today
+    ].copy()
 
-        mtd_dispatched_df = dispatched_df[
-            (dispatched_df["LOADING_TS"] >= report_month_start_ts)
-            & (dispatched_df["LOADING_TS"] <= report_today_ts)
-        ].copy()
+    mtd_dispatched_df = dispatched_df[
+        (dispatched_df["LOADING_TS"] >= report_month_start_ts)
+        & (dispatched_df["LOADING_TS"] <= report_today_ts)
+    ].copy()
 
-        today_dispatch_value = today_dispatched_df["ORDERED_QUANTITY"].sum()
-        mtd_dispatch_value = mtd_dispatched_df["ORDERED_QUANTITY"].sum()
+    today_dispatch_value = today_dispatched_df["ORDERED_QUANTITY"].sum()
+    mtd_dispatch_value = mtd_dispatched_df["ORDERED_QUANTITY"].sum()
 
     summary = (
         filtered_df.groupby(
@@ -501,7 +491,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
                 "Customer": selected_customer,
                 "City": "All Cities",
                 "Severity": "BLUE",
-                "Message": "Backlog available but no target defined",
+                "Message": "Backlog is available but no target",
                 "Reason": "Customer has backlog orders but no target",
             }
         )
@@ -536,7 +526,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
                 "City": "All Cities",
                 "Severity": "GREEN",
                 "Message": "Backlog healthy",
-                "Reason": "Backlog is equal to or more than the target available",
+                "Reason": "Backlog is more than the target available",
             }
         )
 
