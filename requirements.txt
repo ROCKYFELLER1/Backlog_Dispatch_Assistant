@@ -6,4 +6,6 @@ requests
 certifi
 google-auth
 streamlit-autorefresh
+urllib3
+
 
