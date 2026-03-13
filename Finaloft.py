@@ -285,8 +285,8 @@ st.sidebar.header("MTD Date Range")
 min_date = df["LOADING_DATE"].min()
 max_date = df["LOADING_DATE"].max()
 
-start_date = st.sidebar.date_input("Start Date", min_date)
-end_date = st.sidebar.date_input("End Date", max_date)
+start_date = st.sidebar.date_input("Start Date", month_start_ts.date())
+end_date = st.sidebar.date_input("End Date", today)
 
 if start_date > end_date:
     st.sidebar.error("End Date must be after Start Date")
