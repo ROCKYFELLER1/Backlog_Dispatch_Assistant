@@ -156,7 +156,7 @@ def load_data():
         try:
             response = session.get(
                 url,
-                timeout=(30, 120),
+                timeout=(10, 60),
                 verify=certifi.where(),
                 stream=False,
             )
