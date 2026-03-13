@@ -274,7 +274,10 @@ except Exception as e:
 
 today_ts = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
 today = today_ts.date()
+
+# define month start safely
 month_start_ts = today_ts.replace(day=1)
+month_start = month_start_ts.date()
 
 
 # DATE FILTER
@@ -285,7 +288,7 @@ st.sidebar.header("MTD Date Range")
 min_date = df["LOADING_DATE"].min()
 max_date = df["LOADING_DATE"].max()
 
-start_date = st.sidebar.date_input("Start Date", month_start_ts.date())
+start_date = st.sidebar.date_input("Start Date", month_start)
 end_date = st.sidebar.date_input("End Date", today)
 
 if start_date > end_date:
@@ -365,8 +368,8 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     ].copy()
 
     mtd_dispatched_df = dispatched_df[
-        (dispatched_df["LOADING_TS"] >= report_month_start_ts)
-        & (dispatched_df["LOADING_TS"] <= report_today_ts)
+        (dispatched_df["LOADING_DATE"] >= month_start)
+        & (dispatched_df["LOADING_DATE"] <= today)
     ].copy()
 
     today_dispatch_value = today_dispatched_df["ORDERED_QUANTITY"].sum()
