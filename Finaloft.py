@@ -14,13 +14,14 @@ from io import BytesIO
 from http.client import RemoteDisconnected
 from requests.exceptions import ConnectionError, ChunkedEncodingError, SSLError
 from streamlit_autorefresh import st_autorefresh
+import base64
+from pathlib import Path
 
 # -------------------------------------------------
 # PAGE CONFIG
 # -------------------------------------------------
 
 st.set_page_config(page_title="OFT Backlog & Dispatch Assistant", layout="wide")
-
 st_autorefresh(interval=600000, key="data_refresh")
 
 # -------------------------------------------------
@@ -36,50 +37,188 @@ credentials = Credentials.from_service_account_info(
 
 file_id = "11u-AeuFdRbRgl-l6Wk2JaCraSreBc9Cz5oP-KRG31G8"
 
+st.markdown(
+    """
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    """,
+    unsafe_allow_html=True,
+)
+
 # -------------------------------------------------
 # STYLE
 # -------------------------------------------------
 
 st.markdown(
     """
-<style>
-.main {background-color:#0e1a2b;color:white;}
-.block-container {padding-top:2rem;max-width:1400px;}
-.filter-box{background:#14263d;padding:20px;border-radius:15px;margin-bottom:25px;}
-.card{
-    background:#14263d;
-    padding:18px;
-    border-radius:15px;
-    margin-bottom:18px;
-    min-height:260px;
-    width:100%;
-    overflow-x:auto;
-}
-.card-normal{border:3px solid #00D100;}
-.card-critical{border:3px solid #ff0000;}
-.real-table{
-    width:100%;
-    margin-top:0;
-    border-collapse:collapse;
-    table-layout:auto;
-    text-align:center;
-    font-size:12px;
-    color:white;
-}
-.real-table th{
-    border:1px solid #3b4f6b;
-    padding:6px 4px;
-    background:#1a2f4a;
-    color:white;
-}
-.real-table td{
-    border:1px solid #3b4f6b;
-    padding:8px 4px;
-    color:white;
-    font-weight:bold;
-}
-</style>
-""",
+    <style>
+    .main {
+        background-color: #0e1a2b;
+        color: white;
+    }
+
+    .block-container {
+        max-width: 1400px;
+        padding-top: 1rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        padding-bottom: 2rem;
+    }
+
+    .greeting-bar {
+        background: #1a2f4a;
+        padding: 14px 18px;
+        border-radius: 12px;
+        margin-bottom: 12px;
+        font-size: 18px;
+        font-weight: 500;
+        line-height: 1.2;
+        border: 1px solid #2e4a6b;
+    }
+
+    .header-bar {
+        background: linear-gradient(90deg, #228B22, #1e7d1e);
+        padding: 18px 20px;
+        border-radius: 14px;
+        margin-bottom: 18px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.35);
+        border: 1px solid #2e8b57;
+    }
+
+    .header-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .header-title {
+        color: white;
+        font-weight: bold;
+        font-size: clamp(18px, 2.2vw, 32px);
+        text-align: center;
+        flex: 1;
+    }
+
+    .header-logo {
+        width: 70px;
+        max-width: 100%;
+        height: auto;
+    }
+
+    .kpi-box {
+        background: #12263a;
+        padding: 12px;
+        border-radius: 12px;
+        margin-bottom: 18px;
+        border: 1px solid #223a57;
+    }
+
+    div[data-testid="stMetric"] {
+        background: #14263d;
+        border: 1px solid #223a57;
+        padding: 10px;
+        border-radius: 12px;
+    }
+
+    div[data-testid="stMetricLabel"] {
+        font-size: 12px !important;
+    }
+
+    div[data-testid="stMetricValue"] {
+        font-size: 22px !important;
+        font-weight: bold;
+    }
+
+    div[data-testid="stMetricDelta"] {
+        font-size: 12px !important;
+    }
+
+    .card {
+        background: #14263d;
+        padding: 18px;
+        border-radius: 15px;
+        margin-bottom: 18px;
+        min-height: 240px;
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .card-normal {
+        border: 3px solid #00D100;
+    }
+
+    .card-critical {
+        border: 3px solid #ff0000;
+    }
+
+    .real-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: center;
+        font-size: 12px;
+        color: white;
+    }
+
+    .real-table th {
+        border: 1px solid #3b4f6b;
+        padding: 6px 4px;
+        background: #1a2f4a;
+    }
+
+    .real-table td {
+        border: 1px solid #3b4f6b;
+        padding: 8px 4px;
+        font-weight: bold;
+    }
+
+    .alert-box {
+        background: #12263a;
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid #223a57;
+        margin-bottom: 18px;
+    }
+
+    @media (max-width: 1024px) {
+        .block-container {
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+        }
+
+        .header-logo {
+            width: 55px;
+        }
+
+        .greeting-bar {
+            font-size: 16px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .header-wrap {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .header-logo {
+            width: 50px;
+        }
+
+        .header-title {
+            font-size: 20px;
+        }
+
+        .greeting-bar {
+            font-size: 15px;
+            padding: 12px;
+        }
+
+        div[data-testid="stMetricValue"] {
+            font-size: 18px !important;
+        }
+    }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -96,31 +235,55 @@ elif hour < 17:
 else:
     greeting = "Good Evening,"
 
-st.markdown(
-    f"<div style='font-size:18px;margin-bottom:10px;margin-top:12px;'>{greeting}</div>",
-    unsafe_allow_html=True,
-)
-
 # -------------------------------------------------
 # HEADER
 # -------------------------------------------------
 
-st.markdown(
-    """
-<div style="
-background:#228B22;
-padding:25px;
-border-radius:10px;
-text-align:center;
-color:white;
-font-size:28px;
-font-weight:bold;
-margin-bottom:25px;">
-🚚 OFT Backlog & Dispatch Assistant
-</div>
-""",
-    unsafe_allow_html=True,
-)
+
+def get_base64_logo(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+
+left_logo_path = Path(r"C:\Users\DELL\Documents\Backlog_project\new\logo\lafarge.jpeg")
+right_logo_path = Path(r"C:\Users\DELL\Documents\Backlog_project\new\logo\Huaxin.jpeg")
+
+if left_logo_path.exists() and right_logo_path.exists():
+    left_logo = get_base64_logo(left_logo_path)
+    right_logo = get_base64_logo(right_logo_path)
+
+    st.markdown(
+        f"""
+        <div class="greeting-bar">
+            {greeting}
+        </div>
+
+        <div class="header-bar">
+            <div class="header-wrap">
+                <img src="data:image/png;base64,{left_logo}" class="header-logo">
+                <div class="header-title">🚚 OFT Backlog & Dispatch Assistant</div>
+                <img src="data:image/png;base64,{right_logo}" class="header-logo">
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        f"""
+        <div class="greeting-bar">
+            {greeting}
+        </div>
+
+        <div class="header-bar">
+            <div class="header-wrap">
+                <div class="header-title">🚚 OFT Backlog & Dispatch Assistant</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # -------------------------------------------------
 # LOAD DATA
@@ -184,6 +347,7 @@ def load_data():
                 "Type",
                 "Region",
                 "Status Summary",
+                "SHIPPING POINTS",
             ]
 
             missing_cols = [col for col in required_cols if col not in df.columns]
@@ -195,6 +359,7 @@ def load_data():
             df = df[(df["SOLDTO"] != "") & (df["SOLDTO"].str.lower() != "nan")]
 
             df["Status Summary"] = df["Status Summary"].astype(str).str.strip()
+            df["SHIPPING POINTS"] = df["SHIPPING POINTS"].astype(str).str.strip()
 
             numeric_cols = [
                 "Backlog",
@@ -263,8 +428,9 @@ def allocate_snapshot_to_buckets(total_value, base_bucket_totals):
     return allocated
 
 
+# -------------------------------------------------
 # LOAD DATAFRAME
-
+# -------------------------------------------------
 
 try:
     df = load_data()
@@ -274,30 +440,27 @@ except Exception as e:
 
 today_ts = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
 today = today_ts.date()
-
-# define month start safely
 month_start_ts = today_ts.replace(day=1)
-month_start = month_start_ts.date()
 
-
-# DATE FILTER
-
+# -------------------------------------------------
+# SIDEBAR FILTERS
+# -------------------------------------------------
 
 st.sidebar.header("MTD Date Range")
 
 min_date = df["LOADING_DATE"].min()
 max_date = df["LOADING_DATE"].max()
 
-start_date = st.sidebar.date_input("Start Date", month_start)
-end_date = st.sidebar.date_input("End Date", today)
+start_date = st.sidebar.date_input(
+    "Start Date", month_start_ts.date(), min_value=min_date, max_value=max_date
+)
+end_date = st.sidebar.date_input(
+    "End Date", today, min_value=min_date, max_value=max_date
+)
 
 if start_date > end_date:
     st.sidebar.error("End Date must be after Start Date")
     st.stop()
-
-
-# CUSTOMER FILTER
-
 
 customers = sorted(df["SOLDTO"].unique())
 
@@ -305,12 +468,7 @@ selected_customer = st.sidebar.selectbox(
     "Customer Search", ["Select Customer"] + customers
 )
 
-
-# ACTION BUTTONS
-
-
 st.sidebar.markdown("### Actions")
-
 fetch_clicked = st.sidebar.button("Fetch Results")
 refresh_clicked = st.sidebar.button("🔄 Refresh")
 
@@ -324,9 +482,9 @@ if selected_customer == "Select Customer":
     st.info("Please select a customer from the sidebar.")
     st.stop()
 
-
+# -------------------------------------------------
 # LOAD RESULTS
-
+# -------------------------------------------------
 
 if fetch_clicked or "summary_loaded" in st.session_state:
 
@@ -347,13 +505,40 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         st.warning("No data available for the selected customer and date range.")
         st.stop()
 
+    filtered_df["SHIPPING POINTS"] = (
+        filtered_df["SHIPPING POINTS"].astype(str).str.strip()
+    )
+
     total_backlog_value = get_snapshot_value(customer_df["Backlog"])
     total_target_value = get_snapshot_value(customer_df["TARGET"])
     total_order_new_value = get_snapshot_value(customer_df["Order_in_New"])
     total_order_pool_value = get_snapshot_value(customer_df["Order_in_Pool"])
 
-    # DISPATCH DATA, ONLY STATUS SUMMARY = DISPATCHED
+    # SHIPPING POINT ORDER IN POOL BREAKDOWN
+    shipping_pool_base = (
+        filtered_df.groupby("SHIPPING POINTS", dropna=False)["ORDERED_QUANTITY"]
+        .sum()
+        .reset_index(name="Backlog_Share")
+    )
 
+    total_backlog_qty_sp = shipping_pool_base["Backlog_Share"].sum()
+
+    if total_backlog_qty_sp > 0:
+        shipping_pool_base["Share"] = (
+            shipping_pool_base["Backlog_Share"] / total_backlog_qty_sp
+        )
+    else:
+        shipping_pool_base["Share"] = 0
+
+    shipping_pool_base["Order_in_Pool"] = (
+        shipping_pool_base["Share"] * total_order_pool_value
+    )
+
+    shipping_pool_df = shipping_pool_base[
+        ["SHIPPING POINTS", "Order_in_Pool"]
+    ].sort_values("Order_in_Pool", ascending=False)
+
+    # DISPATCH DATA
     dispatched_df = filtered_df[
         filtered_df["Status Summary"].astype(str).str.strip().str.upper()
         == "DISPATCHED"
@@ -368,8 +553,8 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     ].copy()
 
     mtd_dispatched_df = dispatched_df[
-        (dispatched_df["LOADING_DATE"] >= month_start)
-        & (dispatched_df["LOADING_DATE"] <= today)
+        (dispatched_df["LOADING_TS"] >= report_month_start_ts)
+        & (dispatched_df["LOADING_TS"] <= report_today_ts)
     ].copy()
 
     today_dispatch_value = today_dispatched_df["ORDERED_QUANTITY"].sum()
@@ -404,7 +589,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     summary["Dispatch"] = summary["Dispatch"].fillna(0)
     summary["Coverage"] = summary["Backlog"] / summary["Target"].replace(0, np.nan)
 
-    backlog_card_base = filtered_df.groupby(
+    backlog_card_base = customer_df.groupby(
         ["City", "Type", "Incoterm"], dropna=False, as_index=False
     ).agg(Backlog=("ORDERED_QUANTITY", "sum"))
 
@@ -417,6 +602,18 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         on=["City", "Type", "Incoterm"],
         how="outer",
     ).fillna(0)
+
+    order_pool_snapshot = (
+        customer_df.groupby(["City", "Type", "Incoterm"], dropna=False)["Order_in_Pool"]
+        .max()
+        .reset_index()
+    )
+
+    card_base = card_base.merge(
+        order_pool_snapshot, on=["City", "Type", "Incoterm"], how="left"
+    )
+
+    card_base["Order_in_Pool"] = card_base["Order_in_Pool"].fillna(0)
 
     total_actual_backlog_qty = card_base["Backlog"].sum()
 
@@ -536,41 +733,36 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             }
         )
 
-    for _, row in summary.iterrows():
-        if row["Order_New"] > 0:
+    for _, row in shipping_pool_df.iterrows():
+        if row["Order_in_Pool"] > 0:
             alerts.append(
                 {
                     "Time": timestamp,
-                    "Customer": row["SOLDTO"],
-                    "City": row["City"],
-                    "Severity": "YELLOW",
-                    "Message": "Orders stuck in NEW",
-                    "Reason": "",
-                }
-            )
-
-        if row["Order_Pool"] > 0:
-            alerts.append(
-                {
-                    "Time": timestamp,
-                    "Customer": row["SOLDTO"],
-                    "City": row["City"],
+                    "Customer": selected_customer,
+                    "City": row["SHIPPING POINTS"],
                     "Severity": "BLUE",
-                    "Message": "Orders waiting in POOL",
-                    "Reason": "",
+                    "Message": f"Orders waiting in POOL: {row['Order_in_Pool']:,.0f}T",
+                    "Reason": "Orders currently sitting in shipping point pool",
                 }
             )
 
     alerts_df = pd.DataFrame(alerts)
 
-    st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns(3)
-
     city_options = ["All Cities"] + sorted(
         summary["City"].dropna().astype(str).unique()
     )
+
     type_options = ["All Types"] + sorted(summary["Type"].dropna().astype(str).unique())
+
+    shipping_point_options = ["All Shipping Points"] + sorted(
+        filtered_df["SHIPPING POINTS"].dropna().astype(str).str.strip().unique()
+    )
+
+    # -------------------------------------------------
+    # TOP FILTERS IN MAIN PAGE
+    # -------------------------------------------------
+
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         selected_city = st.selectbox("City", city_options)
@@ -579,13 +771,22 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         selected_type = st.selectbox("Type", type_options)
 
     with col3:
+        selected_shipping_point = st.selectbox("Shipping Point", shipping_point_options)
+
+    with col4:
         metric = st.selectbox(
             "Metric", ["Backlog", "Dispatch", "Order_New", "Order_Pool"]
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
     filtered_cards = card_base.copy()
+
+    if selected_shipping_point == "All Shipping Points":
+        selected_shipping_pool_value = shipping_pool_df["Order_in_Pool"].sum()
+    else:
+        selected_shipping_pool_value = shipping_pool_df[
+            shipping_pool_df["SHIPPING POINTS"].astype(str).str.strip()
+            == selected_shipping_point
+        ]["Order_in_Pool"].sum()
 
     if selected_city != "All Cities":
         filtered_cards = filtered_cards[
@@ -600,29 +801,44 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     if metric == "Dispatch":
         filtered_cards = filtered_cards[filtered_cards["Dispatch"] > 0]
 
-    left, right = st.columns([3, 1])
+    if selected_shipping_point != "All Shipping Points":
+        alerts_df = alerts_df[
+            alerts_df["City"].astype(str).str.strip() == selected_shipping_point
+        ]
+
+    # -------------------------------------------------
+    # KPI SECTION
+    # -------------------------------------------------
+
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric("Total Backlog", f"{total_backlog_value:,.0f}T")
+    with k2:
+        st.metric("Target", f"{total_target_value:,.0f}T")
+    with k3:
+        st.metric("MTD Dispatch", f"{mtd_dispatch_value:,.0f}T")
+    with k4:
+        st.metric("Today Dispatch", f"{today_dispatch_value:,.0f}T")
+
+    k5, k6, k7 = st.columns(3)
+    with k5:
+        st.metric("Order in New", f"{total_order_new_value:,.0f}T")
+    with k6:
+        st.metric("Order in Pool", f"{total_order_pool_value:,.0f}T")
+    with k7:
+        st.metric("Shipping Point Pool", f"{selected_shipping_pool_value:,.0f}T")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # -------------------------------------------------
+    # MAIN CONTENT
+    # -------------------------------------------------
+
+    left, right = st.columns([5, 3])
 
     with left:
-        k1, k2, k3, k4, k5, k6 = st.columns(6)
-
-        with k1:
-            st.metric("Total Backlog", f"{total_backlog_value:,.0f}T")
-
-        with k2:
-            st.metric("Target", f"{total_target_value:,.0f}T")
-
-        with k3:
-            st.metric("MTD Dispatch", f"{mtd_dispatch_value:,.0f}T")
-
-        with k4:
-            st.metric("Today Dispatch", f"{today_dispatch_value:,.0f}T")
-
-        with k5:
-            st.metric("Order in New", f"{total_order_new_value:,.0f}T")
-
-        with k6:
-            st.metric("Order in Pool", f"{total_order_pool_value:,.0f}T")
-
         cols = st.columns(2)
 
         metric_label_map = {
@@ -670,28 +886,31 @@ if fetch_clicked or "summary_loaded" in st.session_state:
                     ]
                 )
 
-                card_html = f"""<div class="{card_class}">
-<div style="font-weight:bold;">{city_val}</div>
-<div style="margin-top:6px;">Type: {type_val}</div>
-<div>Incoterm: {incoterm_val}</div>
-<div style="margin-top:12px;font-size:16px;font-weight:bold;">
-{metric_label_map[metric]}: {row[metric]:,.0f}T
-</div>
-<div style="margin-top:12px;">
-<table class="real-table">
-<tr>{header_html}</tr>
-<tr>{value_html}</tr>
-</table>
-</div>
-</div>"""
+                card_html = f"""
+                <div class="{card_class}">
+                    <div style="font-weight:bold;">{city_val}</div>
+                    <div style="margin-top:6px;">Type: {type_val}</div>
+                    <div>Incoterm: {incoterm_val}</div>
+                    <div style="margin-top:12px;font-size:16px;font-weight:bold;">
+                        {metric_label_map[metric]}: {row[metric]:,.0f}T
+                    </div>
+                    <div style="margin-top:12px;">
+                        <table class="real-table">
+                            <tr>{header_html}</tr>
+                            <tr>{value_html}</tr>
+                        </table>
+                    </div>
+                </div>
+                """
 
                 with col:
                     st.markdown(card_html, unsafe_allow_html=True)
 
     with right:
-        if not alerts_df.empty:
-            st.subheader("🚨 Live Alerts")
+        st.markdown('<div class="alert-box">', unsafe_allow_html=True)
+        st.subheader("🚨 Live Alerts")
 
+        if not alerts_df.empty:
             alerts_df = alerts_df.drop_duplicates()
             alerts_df = alerts_df.sort_values("Time", ascending=False)
 
@@ -706,7 +925,7 @@ City: {alert['City']}
 
 Reason:
 {reason_text}
-"""
+                """
 
                 if alert["Severity"] == "RED":
                     st.error(message)
@@ -716,3 +935,7 @@ Reason:
                     st.success(message)
                 else:
                     st.info(message)
+        else:
+            st.info("No live alerts for the selected filters.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
