@@ -759,9 +759,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         filtered_df["SHIPPING POINTS"].dropna().astype(str).str.strip().unique()
     )
 
-    # -------------------------------------------------
+  
     # TOP FILTERS IN MAIN PAGE
-    # -------------------------------------------------
+    
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -807,9 +807,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             alerts_df["City"].astype(str).str.strip() == selected_shipping_point
         ]
 
-    # -------------------------------------------------
+    
     # KPI SECTION
-    # -------------------------------------------------
+    
 
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
 
@@ -833,9 +833,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # -------------------------------------------------
+    
     # MAIN CONTENT
-    # -------------------------------------------------
+    
 
     left, right = st.columns([5, 3])
 
