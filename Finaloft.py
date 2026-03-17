@@ -11,22 +11,22 @@ from urllib3.util.retry import Retry
 from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from io import BytesIO
-from http.client import RemoteDisconnected
+import http.client
 from requests.exceptions import ConnectionError, ChunkedEncodingError, SSLError
 from streamlit_autorefresh import st_autorefresh
 import base64
 from pathlib import Path
 
-# -------------------------------------------------
+
 # PAGE CONFIG
-# -------------------------------------------------
+
 
 st.set_page_config(page_title="OFT Backlog & Dispatch Assistant", layout="wide")
 st_autorefresh(interval=600000, key="data_refresh")
 
-# -------------------------------------------------
+
 # GOOGLE AUTHENTICATION
-# -------------------------------------------------
+
 
 scope = ["https://www.googleapis.com/auth/drive.readonly"]
 
@@ -44,9 +44,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# -------------------------------------------------
+
 # STYLE
-# -------------------------------------------------
+
 
 st.markdown(
     """
@@ -222,9 +222,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# -------------------------------------------------
+
 # GREETING
-# -------------------------------------------------
+
 
 hour = datetime.now().hour
 
@@ -235,9 +235,9 @@ elif hour < 17:
 else:
     greeting = "Good Evening,"
 
-# -------------------------------------------------
+
 # HEADER
-# -------------------------------------------------
+
 
 
 def get_base64_logo(path):
@@ -246,8 +246,9 @@ def get_base64_logo(path):
     return base64.b64encode(data).decode()
 
 
-left_logo_path = Path(r"C:\Users\DELL\Documents\Backlog_project\new\logo\lafarge.jpeg")
-right_logo_path = Path(r"C:\Users\DELL\Documents\Backlog_project\new\logo\Huaxin.jpeg")
+left_logo_path = Path("logo/lafarge.jpeg")
+
+right_logo_path = Path("logo/Huaxin.jpeg")
 
 if left_logo_path.exists() and right_logo_path.exists():
     left_logo = get_base64_logo(left_logo_path)
@@ -285,9 +286,9 @@ else:
         unsafe_allow_html=True,
     )
 
-# -------------------------------------------------
+
 # LOAD DATA
-# -------------------------------------------------
+
 
 
 @st.cache_data(show_spinner=True, ttl=300)
@@ -382,7 +383,7 @@ def load_data():
             return df
 
         except (
-            RemoteDisconnected,
+            http.client.RemoteDisconnected,
             ConnectionError,
             ChunkedEncodingError,
             SSLError,
