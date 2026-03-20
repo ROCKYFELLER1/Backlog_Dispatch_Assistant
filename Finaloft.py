@@ -239,7 +239,6 @@ else:
 # HEADER
 
 
-
 def get_base64_logo(path):
     with open(path, "rb") as f:
         data = f.read()
@@ -288,7 +287,6 @@ else:
 
 
 # LOAD DATA
-
 
 
 @st.cache_data(show_spinner=True, ttl=300)
@@ -452,11 +450,16 @@ st.sidebar.header("MTD Date Range")
 min_date = df["LOADING_DATE"].min()
 max_date = df["LOADING_DATE"].max()
 
+# --- FIX: keep default dates within available data range ---
+safe_today = min(max(today, min_date), max_date)
+safe_month_start = min(max(month_start_ts.date(), min_date), max_date)
+
 start_date = st.sidebar.date_input(
-    "Start Date", month_start_ts.date(), min_value=min_date, max_value=max_date
+    "Start Date", safe_month_start, min_value=min_date, max_value=max_date
 )
+
 end_date = st.sidebar.date_input(
-    "End Date", today, min_value=min_date, max_value=max_date
+    "End Date", safe_today, min_value=min_date, max_value=max_date
 )
 
 if start_date > end_date:
@@ -759,9 +762,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         filtered_df["SHIPPING POINTS"].dropna().astype(str).str.strip().unique()
     )
 
-  
+    # -------------------------------------------------
     # TOP FILTERS IN MAIN PAGE
-    
+    # -------------------------------------------------
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -807,9 +810,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
             alerts_df["City"].astype(str).str.strip() == selected_shipping_point
         ]
 
-    
+    # -------------------------------------------------
     # KPI SECTION
-    
+    # -------------------------------------------------
 
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
 
@@ -833,9 +836,9 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    
+    # -------------------------------------------------
     # MAIN CONTENT
-    
+    # -------------------------------------------------
 
     left, right = st.columns([5, 3])
 
