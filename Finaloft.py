@@ -447,8 +447,10 @@ month_start_ts = today_ts.replace(day=1)
 
 st.sidebar.header("MTD Date Range")
 
-min_date = df["LOADING_DATE"].min()
-max_date = df["LOADING_DATE"].max()
+min_date = pd.to_datetime(df["LOADING_DATE"], errors="coerce").min().date()
+max_date = pd.to_datetime(df["LOADING_DATE"], errors="coerce").max().date()
+
+df = df.dropna(subset=["LOADING_DATE"])
 
 # --- FIX: keep default dates within available data range ---
 safe_today = min(max(today, min_date), max_date)
