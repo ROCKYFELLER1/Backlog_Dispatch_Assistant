@@ -515,7 +515,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         filtered_df["SHIPPING POINTS"].astype(str).str.strip()
     )
 
-    total_backlog_value = customer_df["ORDERED_QUANTITY"].sum()
+    total_backlog_value = get_snapshot_value(customer_df["Backlog"])
     total_target_value = get_snapshot_value(customer_df["TARGET"])
     total_order_new_value = get_snapshot_value(customer_df["Order_in_New"])
     total_order_pool_value = get_snapshot_value(customer_df["Order_in_Pool"])
@@ -595,9 +595,25 @@ if fetch_clicked or "summary_loaded" in st.session_state:
     summary["Dispatch"] = summary["Dispatch"].fillna(0)
     summary["Coverage"] = summary["Backlog"] / summary["Target"].replace(0, np.nan)
 
-    backlog_card_base = customer_df.groupby(
+    backlog_card_base = filtered_df.groupby(
         ["City", "Type", "Incoterm"], dropna=False, as_index=False
-    ).agg(Backlog=("ORDERED_QUANTITY", "sum"))
+    ).agg(Base_Qty=("ORDERED_QUANTITY", "sum"))
+
+    total_base_qty = backlog_card_base["Base_Qty"].sum()
+
+    if total_base_qty > 0:
+        backlog_card_base["Share"] = backlog_card_base["Base_Qty"] / total_base_qty
+    else:
+        backlog_card_base["Share"] = 0
+
+    backlog_card_base["Backlog"] = backlog_card_base["Share"] * total_backlog_value
+
+    # Optional: clean rounding so totals match exactly
+    backlog_card_base["Backlog"] = backlog_card_base["Backlog"].round(0)
+
+    difference = total_backlog_value - backlog_card_base["Backlog"].sum()
+    if len(backlog_card_base) > 0:
+        backlog_card_base.loc[backlog_card_base.index[-1], "Backlog"] += difference
 
     dispatch_card_base = mtd_dispatched_df.groupby(
         ["City", "Type", "Incoterm"], dropna=False, as_index=False
