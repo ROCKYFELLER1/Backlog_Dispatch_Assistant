@@ -515,7 +515,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         filtered_df["SHIPPING POINTS"].astype(str).str.strip()
     )
 
-    total_backlog_value = get_snapshot_value(customer_df["Backlog"])
+    total_backlog_value = customer_df["ORDERED_QUANTITY"].sum()
     total_target_value = get_snapshot_value(customer_df["TARGET"])
     total_order_new_value = get_snapshot_value(customer_df["Order_in_New"])
     total_order_pool_value = get_snapshot_value(customer_df["Order_in_Pool"])
