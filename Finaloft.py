@@ -347,6 +347,7 @@ def load_data():
                 "Region",
                 "Status Summary",
                 "SHIPPING POINTS",
+                "DAILY DISPATCH",
             ]
 
             missing_cols = [col for col in required_cols if col not in df.columns]
@@ -366,6 +367,7 @@ def load_data():
                 "ORDERED_QUANTITY",
                 "Order_in_New",
                 "Order_in_Pool",
+                "DAILY DISPATCH",
             ]
 
             for col in numeric_cols:
@@ -563,7 +565,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         & (dispatched_df["LOADING_TS"] <= report_today_ts)
     ].copy()
 
-    today_dispatch_value = today_dispatched_df["ORDERED_QUANTITY"].sum()
+    today_dispatch_value = today_dispatched_df["DAILY DISPATCH"].sum()
     mtd_dispatch_value = mtd_dispatched_df["ORDERED_QUANTITY"].sum()
 
     summary = (
