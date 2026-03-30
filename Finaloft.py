@@ -854,7 +854,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         alerts_df = alerts_df[
             alerts_df["City"].astype(str).str.strip() == selected_shipping_point
         ]
-    st.markdown("### 🧠 Data Health Check")
+    st.markdown("### 📈 Data Insight Status")
 
     if df.empty:
         st.error("❌ No data loaded from source.")
@@ -868,9 +868,6 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         else:
             st.success(f"✅ Data is up to date for today ({today})")
 
-    latest_timestamp = df["LOADING_TS"].max()
-
-    st.info(f"📡 Latest record timestamp: {latest_timestamp}")
     # -------------------------------------------------
     # KPI SECTION
     # -------------------------------------------------
