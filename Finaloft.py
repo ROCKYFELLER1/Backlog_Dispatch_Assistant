@@ -439,8 +439,11 @@ except Exception as e:
     st.error(f"Unable to load data: {e}")
     st.stop()
 
+st.caption(f"🕒 Last data refresh: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
 today_ts = pd.Timestamp.now(tz="Africa/Lagos").normalize().tz_localize(None)
 today = today_ts.date()
+today_data_exists = (df["LOADING_DATE"] == today).any()
 month_start_ts = today_ts.replace(day=1)
 
 # -------------------------------------------------
@@ -851,7 +854,23 @@ if fetch_clicked or "summary_loaded" in st.session_state:
         alerts_df = alerts_df[
             alerts_df["City"].astype(str).str.strip() == selected_shipping_point
         ]
+    st.markdown("### 🧠 Data Health Check")
 
+    if df.empty:
+        st.error("❌ No data loaded from source.")
+    else:
+        latest_data_date = df["LOADING_DATE"].max()
+
+        if not today_data_exists:
+            st.warning(
+                f"⚠️ No data available for today ({today}). Latest data is {latest_data_date}"
+            )
+        else:
+            st.success(f"✅ Data is up to date for today ({today})")
+
+    latest_timestamp = df["LOADING_TS"].max()
+
+    st.info(f"📡 Latest record timestamp: {latest_timestamp}")
     # -------------------------------------------------
     # KPI SECTION
     # -------------------------------------------------
