@@ -894,7 +894,7 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### 📦 Today Dispatch by Order Type")
+    st.markdown("### 📦 Today Dispatch by product")
 
     if not today_dispatch_by_type.empty:
         for _, row in today_dispatch_by_type.iterrows():
