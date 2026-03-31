@@ -894,14 +894,6 @@ if fetch_clicked or "summary_loaded" in st.session_state:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### 📦 Today Dispatch by product")
-
-    if not today_dispatch_by_type.empty:
-        for _, row in today_dispatch_by_type.iterrows():
-            st.write(f"{row['Type']}: {row['DAILY DISPATCH']:,.0f}T")
-    else:
-        st.info("No dispatch recorded for today.")
-
     # -------------------------------------------------
     # MAIN CONTENT
     # -------------------------------------------------
